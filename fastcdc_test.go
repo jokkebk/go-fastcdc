@@ -2,7 +2,6 @@ package fastcdc
 
 import (
 	"bytes"
-	"crypto/rand"
 	"io"
 	"testing"
 )
@@ -22,12 +21,6 @@ func fillLCG(data []byte, seed uint32) {
 func TestChunker(t *testing.T) {
 	// Generate 1 MB of pseudorandom data
 	data := make([]byte, 1*miB)
-	_, err := rand.Read(data)
-	if err != nil {
-		t.Fatalf("failed to generate random data: %v", err)
-		return
-	}
-
 	fillLCG(data, 42)
 
 	// Create a Chunker instance
@@ -45,14 +38,19 @@ func TestChunker(t *testing.T) {
 	// Collect actual offsets
 	var actualOffsets []int
 	for {
-		offset, err := chunker.Next()
+		chunk, err := chunker.Next()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
 			t.Fatalf("error getting next chunk: %v", err)
 		}
-		actualOffsets = append(actualOffsets, offset)
+		actualOffsets = append(actualOffsets, chunk.Offset+len(chunk.Data))
+
+		// Verify the chunk data matches the expected data
+		if !bytes.Equal(chunk.Data, data[chunk.Offset:chunk.Offset+len(chunk.Data)]) {
+			t.Fatalf("chunk data mismatch at offset %d", chunk.Offset)
+		}
 	}
 
 	// Verify the generated offsets

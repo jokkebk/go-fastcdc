@@ -21,6 +21,11 @@ type Chunker struct {
 	maskL uint64
 }
 
+type Chunk struct {
+	Offset int
+	Data   []byte
+}
+
 const (
 	kiB = 1024
 	miB = 1024 * kiB
@@ -68,8 +73,10 @@ func (c *Chunker) fillBuffer() error {
 	return nil
 }
 
-// Next returns the offset of next chunk boundary
-func (c *Chunker) Next() (int, error) {
+// Next returns the offset of next chunk boundary and io.EOF on last chunk.
+// Chunk data is a slice of the original data, so it is invalidated on the
+// next call to Next().
+func (c *Chunker) Next() (Chunk, error) {
 	// If we don't have enough data in the buffer to potentially find a cut point
 	if !c.eof && c.available-c.pos < c.maxSize {
 		// Move any remaining data to start of buffer
@@ -82,7 +89,7 @@ func (c *Chunker) Next() (int, error) {
 
 		// Try to fill the buffer
 		if err := c.fillBuffer(); err != nil {
-			return 0, err
+			return Chunk{}, err
 		}
 	}
 
@@ -90,17 +97,23 @@ func (c *Chunker) Next() (int, error) {
 
 	// If we have no data left, we're done
 	if c.pos >= c.available {
-		return 0, io.EOF
+		return Chunk{}, io.EOF
 	}
 
 	// Find cut point -- can also be size of available data (if EOF)
 	cutPoint := c.findCutPoint(c.buf[c.pos:c.available])
 
-	// Update positions
+	// Create a chunk
+	chunk := Chunk{
+		Offset: c.bufOffset + c.pos,
+		Data:   c.buf[c.pos : c.pos+cutPoint],
+	}
+
+	// Update position, next call to Next() will start at this point
 	c.pos += cutPoint
 
 	// Return offset of cut point
-	return c.bufOffset + c.pos, nil
+	return chunk, nil
 }
 
 // findCutPoint implements the FastCDC cut point selection algorithm
